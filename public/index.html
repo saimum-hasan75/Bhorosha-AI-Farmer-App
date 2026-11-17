@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="bn">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0F172A" />
+  <meta name="description" content="ভরসা (Bhorsha) - ফসলের সঠিক দাম ও ন্যায্য বিক্রির জন্য কৃষকের পাশে AI সহায়ক" />
+  <title>ভরসা (Bhorsha) | কৃষকের AI সহায়ক ও সরাসরি কৃষি বাজার</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Bengali:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+
+  <!-- QRCode Library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="modal-overlay hidden">
+    <div style="text-align: center; color: #fff;">
+      <div style="font-size: 3rem; margin-bottom: 12px; animation: pulse 1s infinite;">🌾</div>
+      <p id="loading-text" style="font-size: 1.1rem; font-weight: 700;">AI বিশ্লেষণ চলছে...</p>
+    </div>
+  </div>
+
+  <!-- ─── LIVE MARKET PRICE TICKER ─────────────────────────────────────────── -->
+  <div class="market-ticker">
+    <div class="ticker-badge">🔴 সরকারি বাজার দর</div>
+    <div class="ticker-track" id="market-ticker-track">
+      <span class="ticker-item">লোড হচ্ছে...</span>
+    </div>
+  </div>
+
+  <!-- ─── PROFESSIONAL TOP NAVBAR ─────────────────────────────────────────── -->
+  <header class="pro-navbar">
+    <div class="nav-container">
+      <div class="nav-brand" onclick="navigateHome()">
+        <span class="nav-brand-logo">🌾</span>
+        <div class="nav-brand-text">
+          <h1>ভরসা <span>AI</span></h1>
+          <p>কৃষক ও বাজারের বিশ্বস্ত সেতু</p>
+        </div>
+      </div>
+
+      <!-- Live Crop Search with Auto-Match Price -->
+      <div class="nav-search">
+        <span class="nav-search-icon">🔍</span>
+        <input type="text" id="nav-search-input" class="nav-search-input"
+          placeholder="ফসল খুঁজুন (যেমন: আলু, টমেটো, পেঁয়াজ)..." autocomplete="off"
+          oninput="handleLiveSearch(this.value)" />
+        <div id="search-dropdown" class="search-dropdown hidden"></div>
+      </div>
+
+      <!-- Nav Actions (Auth / Profile / Settings) -->
+      <div class="nav-actions">
+        <!-- Notification Bell -->
+        <button class="nav-icon-btn" onclick="toggleNotificationsModal()" title="বিজ্ঞপ্তি">
+          🔔
+          <span id="notif-badge" class="badge-count hidden">০</span>
+        </button>
+
+        <!-- User Profile Pill -->
+        <div id="nav-user-pill" class="user-pill hidden" onclick="toggleProfileMenu()">
+          <span id="nav-user-avatar" class="user-avatar">👨‍🌾</span>
+          <span id="nav-user-name">কৃষক</span>
+          <span id="nav-role-badge" class="nav-role-badge role-farmer">কৃষক</span>
+        </div>
+
+        <!-- Login Button (Visible when logged out) -->
+        <button id="nav-login-btn" class="btn btn-sm btn-primary" onclick="showAuthView()">
+          🔑 লগইন
+        </button>
+
+        <!-- Settings Cog -->
+        <button class="nav-icon-btn" onclick="openSettingsModal()" title="সেটিংস">
+          ⚙️
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── AUTHENTICATION SCREEN (LOGIN / REGISTER) ────────────────────────── -->
+  <section id="auth-screen" class="auth-container hidden">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo">🌾</div>
+        <h2>ভরসায় স্বাগতম</h2>
+        <p>সঠিক দাম জানুন, আত্মবিশ্বাসে ফসল বিক্রি করুন</p>
+      </div>
+
+      <!-- 1-Click Quick Demo Accounts (For Evaluators & Judges) -->
+      <div class="demo-accounts-box">
+        <h4>⚡ তাৎক্ষণিক ডেমো লগইন</h4>
+        <div class="demo-btn-group">
+          <button class="btn-demo-quick" onclick="quickDemoLogin('farmer')">👨‍🌾 কৃষক</button>
+          <button class="btn-demo-quick" onclick="quickDemoLogin('buyer')">🏪 আড়তদার</button>
+          <button class="btn-demo-quick" onclick="quickDemoLogin('admin')">🛡️ অ্যাডমিন</button>
+        </div>
+      </div>
+
+      <!-- Toggle Login vs Register Tabs -->
+      <div style="display: flex; gap: 8px; margin-bottom: 20px;">
+        <button id="tab-auth-login-btn" class="btn btn-sm btn-primary" style="flex: 1;"
+          onclick="switchAuthTab('login')">লগইন</button>
+        <button id="tab-auth-reg-btn" class="btn btn-sm btn-outline" style="flex: 1;"
+          onclick="switchAuthTab('register')">নতুন অ্যাকাউন্ট</button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form" onsubmit="handleLoginSubmit(event)">
+        <div class="form-group">
+          <label class="form-label">মোবাইল নম্বর</label>
+          <input type="text" id="login-phone" class="input-control" placeholder="যেমন: 01800000000" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">পাসওয়ার্ড</label>
+          <input type="password" id="login-password" class="input-control" placeholder="••••••••" required />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top: 10px;">
+          লগইন করুন →
+        </button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" class="hidden" onsubmit="handleRegisterSubmit(event)">
+        <div class="form-group">
+          <label class="form-label">আপনার পূর্ণ নাম</label>
+          <input type="text" id="reg-name" class="input-control" placeholder="যেমন: মো: রহিম মিয়া" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">মোবাইল নম্বর</label>
+          <input type="text" id="reg-phone" class="input-control" placeholder="যেমন: 01712345678" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">পাসওয়ার্ড</label>
+          <input type="password" id="reg-password" class="input-control" placeholder="কমপক্ষে ৪ অক্ষরের পাসওয়ার্ড"
+            required />
+        </div>
+        <div class="form-group">
+          <label class="form-label">আপনার ভূমিকা নির্বাচন করুন</label>
+          <select id="reg-role" class="input-control">
+            <option value="farmer">👨‍🌾 কৃষক (ফসল উৎপাদনকারী)</option>
+            <option value="buyer">🏪 পাইকারি ক্রেতা / রেস্তোরাঁ / আড়তদার</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">এলাকা / জেলা</label>
+          <input type="text" id="reg-location" class="input-control" placeholder="যেমন: নরসিংদী সদর" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" style="margin-top: 10px;">
+          অ্যাকাউন্ট তৈরি করুন ✓
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ─── MAIN APP DASHBOARD ──────────────────────────────────────────────── -->
+  <main id="app-main-content" class="main-content-area app-wrapper">
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 1: HOME (বাজার দর ও মধ্যস্বত্বভোগী ফাঁক বিশ্লেষণ)
+         ══════════════════════════════════════════════════════════════════════ -->
+    <section id="tab-home" class="tab-pane active">
+      <!-- Welcome Hero Banner -->
+      <div class="welcome-banner">
+        <div class="welcome-tagline">কৃষি বাজার বিশ্লেষণ ও সিদ্ধান্ত সহায়ক</div>
+        <h2 class="welcome-title">ছবি তুলুন। ন্যায্য দর জানুন। আত্মবিশ্বাসে বিক্রি করুন।</h2>
+        <p class="welcome-desc">
+          মধ্যস্বত্বভোগীর সামনে দাঁড়ানোর মুহূর্তে ফসলের মান নিশ্চিত করুন এবং সরকারি পাইকারি-খুচরা মূল্যের ব্যবধান দেখে
+          নিজের ন্যায্য হিস্যা বুঝে নিন।
+        </p>
+        <div class="welcome-stats-row">
+          <div class="welcome-stat-pill">📊 <span>২৫+ ফসলের দাম আপডেট</span></div>
+          <div class="welcome-stat-pill">🏛️ <span>DAM সরকারি রেট সংযুক্ত</span></div>
+          <div class="welcome-stat-pill">🔒 <span>এসক্রো নিরাপদ লেনদেন</span></div>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div
+        style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 24px;">
+        <button class="btn btn-outline" onclick="switchMainTab('grading')">📸 ফসল গ্রেডিং</button>
+        <button class="btn btn-outline" onclick="switchMainTab('middleman')">💰 দালাল ধরা স্কোর</button>
+        <button class="btn btn-outline" onclick="switchMainTab('marketplace')">📋 সরাসরি বাজার</button>
+        <button class="btn btn-outline" onclick="switchMainTab('weather')">🌦️ আবহাওয়া বার্তা</button>
+      </div>
+
+      <!-- Market Explorer Header -->
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">🥬 সরকারি বাজার দর ও ফসলের তালিকা</h3>
+          <p class="card-sub">কারওয়ান বাজার ও শ্যামবাজারের দৈনিক পাইকারি বনাম খুচরা মূল্য তালিকা</p>
+        </div>
+        <!-- Category Filter -->
+        <div style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px;">
+          <button class="btn btn-sm btn-primary" onclick="filterCropsByCategory('all', this)">সব</button>
+          <button class="btn btn-sm btn-outline" onclick="filterCropsByCategory('সবজি', this)">সবজি</button>
+          <button class="btn btn-sm btn-outline" onclick="filterCropsByCategory('মসলা', this)">মসলা</button>
+          <button class="btn btn-sm btn-outline" onclick="filterCropsByCategory('শাকসবজি', this)">শাক</button>
+          <button class="btn btn-sm btn-outline" onclick="filterCropsByCategory('শস্য', this)">শস্য</button>
+          <button class="btn btn-sm btn-outline" onclick="filterCropsByCategory('ফল', this)">ফল</button>
+        </div>
+      </div>
+
+      <!-- Crop Price Benchmark Grid -->
+      <div id="crops-price-grid" class="crops-price-grid">
+        <div style="padding: 20px; text-align: center; color: var(--text-muted); grid-column: 1/-1;">মূল্য তালিকা লোড
+          হচ্ছে...</div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 2: AI CROP QUALITY GRADING (ছবি ভিত্তিক ফসলের মান নির্ধারণ)
+         ══════════════════════════════════════════════════════════════════════ -->
+    <section id="tab-grading" class="tab-pane">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">📸 AI ফটো-ভিত্তিক ফসলের কোয়ালিটি গ্রেডিং</h3>
+          <p class="card-sub">ফসলের ছবি তুলুন, কম্পিউটার ভিশন AI পাকা-কাঁচা, ক্ষতি ও সতেজতা দেখে মান যাচাই করবে</p>
+        </div>
+        <span class="nav-role-badge role-farmer">মাল্টিমোডাল ভিশন</span>
+      </div>
+
+      <!-- Crop Selector for Grading -->
+      <div class="card">
+        <div class="form-group">
+          <label class="form-label">গ্রেডিংয়ের জন্য ফসল নির্বাচন করুন</label>
+          <select id="grading-crop-select" class="input-control" onchange="onGradingCropChange(this.value)">
+            <option value="auto" selected>🤖 ছবি থেকে স্বয়ংক্রিয় ফসল শনাক্ত করুন (Auto Detect)</option>
+            <!-- Populated via JS -->
+          </select>
+        </div>
+
+        <!-- Camera / File Upload Box -->
+        <div class="camera-card" onclick="document.getElementById('crop-camera-input').click()">
+          <input type="file" id="crop-camera-input" accept="image/*" capture="environment" class="hidden"
+            onchange="handleCropImageSelected(event)" />
+          <div id="camera-placeholder-ui">
+            <div class="camera-icon">📷</div>
+            <h4 style="font-size: 1.1rem; font-weight: 700; color: var(--primary);">ফসলের ছবি তুলুন অথবা আপলোড করুন</h4>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">উজ্জ্বল আলোয় পরিষ্কার ছবি তুলুন
+              (JPG / PNG, সর্বোচ্চ ৮ MB)</p>
+          </div>
+          <img id="crop-photo-preview" class="photo-preview-box hidden" alt="ফসল প্রিভিউ" />
+        </div>
+
+        <!-- Non-crop / Blurry Image Warning Banner -->
+        <div id="grading-warning-banner" class="hidden"
+          style="background: #FEF2F2; border: 1.5px solid var(--danger); border-radius: var(--radius-sm); padding: 14px; margin-top: 14px; color: #991B1B; font-size: 0.9rem;">
+          ⚠️ <span id="grading-warning-text">ছবিতে কোনো পরিচিত কৃষিজাত ফসল স্পষ্ট শনাক্ত করা যায়নি। অনুগ্রহ করে ভালো
+            আলোতে সরাসরি ফসলের পরিষ্কার ছবি দিন।</span>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 16px;">
+          <button class="btn btn-outline" style="flex: 1;"
+            onclick="document.getElementById('crop-camera-input').click()">🔄 অন্য ছবি নিন</button>
+          <button id="btn-run-grading" class="btn btn-primary" style="flex: 2;" onclick="startAIGrading()" disabled>🔍
+            AI গ্রেড ও ফসল শনাক্ত করুন</button>
+        </div>
+      </div>
+
+      <!-- Grading Results Panel -->
+      <div id="grading-results-container" class="hidden">
+        <div class="card" style="text-align: center;">
+          <!-- Identified Crop Highlight Header -->
+          <div
+            style="display: inline-flex; align-items: center; gap: 8px; background: var(--bg-subtle); border: 1px solid var(--card-border); padding: 6px 16px; border-radius: var(--radius-full); margin-bottom: 16px;">
+            <span style="font-size: 0.82rem; color: var(--text-muted); font-weight: 600;">AI শনাক্তকৃত ফসল:</span>
+            <span id="grade-detected-crop-badge"
+              style="font-weight: 800; color: var(--brand-dark); font-size: 0.95rem;">টমেটো 🍅</span>
+          </div>
+
+          <div id="grade-badge-element" class="grade-badge-display grade-A">A</div>
+          <h3 id="grade-title-text" style="font-size: 1.35rem; font-weight: 800; color: var(--primary);">গ্রেড A (সেরা
+            মান)</h3>
+
+          <div
+            style="display: flex; justify-content: center; gap: 16px; margin: 4px 0 16px 0; font-size: 0.85rem; color: var(--text-muted);">
+            <span id="grade-confidence-text">AI আত্মবিশ্বাস: ৯২%</span>
+            <span>•</span>
+            <span id="grade-defect-level">দাগ বা ত্রুটি: ৩% (ন্যূনতম)</span>
+          </div>
+
+          <!-- Plain Bangla Reasons -->
+          <div
+            style="text-align: left; background: var(--bg-subtle); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 16px;">
+            <h5 style="font-weight: 700; margin-bottom: 8px;">📋 বাস্তবসম্মত মূল্যায়নের কারণসমূহ:</h5>
+            <ul id="grade-reasons-list" style="padding-left: 20px; font-size: 0.92rem; line-height: 1.8;"></ul>
+          </div>
+
+          <!-- Grade Adjusted Fair Benchmark -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px;">
+            <div style="background: var(--bg-subtle); padding: 10px; border-radius: var(--radius-sm);">
+              <div style="font-size: 0.75rem; color: var(--text-muted);">DAM পাইকারি ভিত্তি</div>
+              <div id="grade-wholesale-price" class="num-font" style="font-size: 1.15rem; font-weight: 800;">৳৩৫/কেজি
+              </div>
+            </div>
+            <div style="background: var(--bg-subtle); padding: 10px; border-radius: var(--radius-sm);">
+              <div style="font-size: 0.75rem; color: var(--text-muted);">খুচরা বাজার দর</div>
+              <div id="grade-retail-price" class="num-font" style="font-size: 1.15rem; font-weight: 800;">৳৫৫/কেজি</div>
+            </div>
+            <div
+              style="background: var(--brand-glow); border: 1.5px solid var(--brand); padding: 10px; border-radius: var(--radius-sm);">
+              <div style="font-size: 0.75rem; color: var(--brand-dark); font-weight: 700;">গ্রেড সমন্বিত দর</div>
+              <div id="grade-fair-price" class="num-font"
+                style="font-size: 1.15rem; font-weight: 800; color: var(--brand-dark);">৳৪০.২৫/কেজি</div>
+            </div>
+          </div>
+
+          <!-- Dispute Button & Ethical AI Note -->
+          <div
+            style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding-top: 12px; border-top: 1px solid var(--bg-subtle);">
+            <button class="btn btn-sm btn-outline" onclick="openDisputeModal()">🚩 এই গ্রেড মানি না (আপত্তি
+              দায়ের)</button>
+            <button class="btn btn-sm btn-primary" onclick="proceedToMiddlemanCalc()">💰 দালালের দাম যাচাই করুন
+              →</button>
+          </div>
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 10px; font-style: italic;">
+            ⚠️ AI শুধুমাত্র পরামর্শক; ফসল বিক্রির চূড়ান্ত সিদ্ধান্ত সর্বদা কৃষকের নিজের।
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 3: MIDDLEMAN SCORE (দালাল ধরা স্কোর)
+         ══════════════════════════════════════════════════════════════════════ -->
+    <section id="tab-middleman" class="tab-pane">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">💰 দালাল ধরা স্কোর (Middleman Exploitation Score)</h3>
+          <p class="card-sub">দালাল বা মধ্যস্বত্বভোগী আপনাকে কত টাকা কম দিচ্ছে এবং মোট কত ক্ষতি হচ্ছে দেখুন</p>
+        </div>
+      </div>
+
+      <div class="calc-grid">
+        <!-- Input Form -->
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label">ফসল নির্বাচন করুন</label>
+            <select id="mm-crop-select" class="input-control" onchange="onMiddlemanCropChange(this.value)">
+              <!-- Populated via JS -->
+            </select>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label">কোয়ালিটি গ্রেড</label>
+              <select id="mm-grade-select" class="input-control" onchange="calculateMiddlemanScorePreview()">
+                <option value="A">গ্রেড A (উচ্চ মান +১৫%)</option>
+                <option value="B" selected>গ্রেড B (সাধারণ পাইকারি দর)</option>
+                <option value="C">গ্রেড C (নিম্ন মান -১৫%)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">সরকারি ন্যায্য দর (৳/কেজি)</label>
+              <input type="number" id="mm-fair-price-input" class="input-control" readonly />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">দালাল বা ব্যাপারীর প্রস্তাবিত দর (৳/কেজি)</label>
+            <div class="input-voice-wrap">
+              <input type="number" id="mm-offer-input" class="input-control" placeholder="যেমন: ২৫"
+                oninput="calculateMiddlemanScorePreview()" />
+              <button class="voice-trigger-btn" onclick="triggerVoiceInput('mm-offer-input')"
+                title="মুখে বলুন">🎤</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">ফসলের মোট পরিমাণ (কেজি)</label>
+            <div class="input-voice-wrap">
+              <input type="number" id="mm-qty-input" class="input-control" placeholder="যেমন: ১০০"
+                oninput="calculateMiddlemanScorePreview()" />
+              <button class="voice-trigger-btn" onclick="triggerVoiceInput('mm-qty-input')"
+                title="মুখে বলুন">🎤</button>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-block" onclick="executeMiddlemanCheck()">
+            🧮 দালাল ধরা স্কোর যাচাই করুন
+          </button>
+        </div>
+
+        <!-- Result Card -->
+        <div id="mm-result-panel" class="card" style="display: flex; flex-direction: column; justify-content: center;">
+          <div id="mm-empty-state" style="text-align: center; color: var(--text-muted); padding: 40px 10px;">
+            <div style="font-size: 3rem; margin-bottom: 8px;">⚖️</div>
+            <h4>দালালের অফার ও পরিমাণ লিখে হিসাব করুন</h4>
+            <p style="font-size: 0.85rem; margin-top: 4px;">সরকারি ডেটাবেসের সাথে তুলনা করে বঞ্চনার হার ও ক্ষতির পরিমাণ
+              বেরিয়ে আসবে।</p>
+          </div>
+
+          <!-- Dynamic Result Shown Here -->
+          <div id="mm-active-result" class="hidden">
+            <div id="mm-result-banner" class="result-card-loss">
+              <div id="mm-result-title" class="loss-headline">৩৮% কম দিচ্ছে!</div>
+              <div id="mm-result-loss" class="loss-sub">মোট বঞ্চনা / ক্ষতি: ৳১,৫০০</div>
+            </div>
+
+            <!-- Step by step calculation -->
+            <div class="calc-breakdown-box">
+              <h5 style="font-weight: 700; color: var(--primary); margin-bottom: 6px;">📐 কীভাবে হিসাব হলো:</h5>
+              <div id="mm-calculation-steps-list"></div>
+            </div>
+
+            <!-- Kind Bangla AI Advice -->
+            <div id="mm-ai-advice-box"
+              style="margin-top: 14px; background: #FEF3C7; border-left: 4px solid var(--accent-gold); padding: 12px; border-radius: 6px; font-size: 0.92rem; color: #78350F;">
+              💡 <strong>AI পরামর্শ:</strong> <span id="mm-advice-text">দালাল ন্যায্য দামের চেয়ে কম প্রস্তাব করছে।
+                পাশের আড়ত অথবা সরাসরি ক্রেতাদের অফার যাচাই করুন।</span>
+            </div>
+
+            <!-- Direct Listing Action -->
+            <button class="btn btn-sm btn-accent btn-block" style="margin-top: 14px;" onclick="convertCalcToListing()">
+              📋 মধ্যস্বত্বভোগী বাদ দিয়ে সরাসরি ন্যায্য বাজারে তালিকাভুক্ত করুন →
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 4: MARKETPLACE (সরাসরি কৃষক-ক্রেতা বাজার)
+         ══════════════════════════════════════════════════════════════════════ -->
+    <section id="tab-marketplace" class="tab-pane">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">🏪 সরাসরি কৃষক-ক্রেতা বাজার (বিচৌলিয়া মুক্ত)</h3>
+          <p class="card-sub">রেস্তোরাঁ, আড়তদার ও সাধারণ ক্রেতাদের সরাসরি অফার এবং ন্যায্য মূল্যে বিক্রি</p>
+        </div>
+        <button class="btn btn-sm btn-primary" onclick="openNewListingModal()">➕ ফসলের তালিকা যোগ করুন</button>
+      </div>
+
+      <!-- Marketplace Listings Grid -->
+      <div id="marketplace-listings-container"
+        style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+        <div style="padding: 24px; text-align: center; color: var(--text-muted); grid-column: 1/-1;">তালিকা লোড হচ্ছে...
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 5: WEATHER (আবহাওয়া সতর্কতা ও আগাম বিক্রির পরামর্শ)
+         ══════════════════════════════════════════════════════════════════════ -->
+    <section id="tab-weather" class="tab-pane">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">🌦️ স্মার্ট আবহাওয়া পূর্বাভাস ও ফসল সুরক্ষা</h3>
+          <p class="card-sub">বৃষ্টির পূর্বাভাস ও পচনশীলতা বিবেচনা করে আগেভাগে ফসল বিক্রির সঠিক সিদ্ধান্ত নিন</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 20px;">
+          <span style="font-weight: 700;">ফসলের ধরন:</span>
+          <button id="weather-perish-btn" class="btn btn-sm btn-primary" onclick="toggleWeatherPerishable(true)">🍅
+            পচনশীল (টমেটো, কাঁচা শাকসবজি)</button>
+          <button id="weather-nonperish-btn" class="btn btn-sm btn-outline" onclick="toggleWeatherPerishable(false)">🌾
+            অপচনশীল (ধান, আলু, রসুন)</button>
+        </div>
+
+        <h4 style="font-size: 0.95rem; font-weight: 700; margin-bottom: 12px;">আগামী ৩ দিনের বৃষ্টিপাতের সম্ভাবনা
+          সামঞ্জস্য করুন:</h4>
+
+        <div class="weather-day-bar" id="weather-day-1">
+          <span style="font-weight: 700; min-width: 80px;">আগামীকাল:</span>
+          <div class="weather-progress-track">
+            <div id="rain-bar-1" class="weather-progress-val" style="width: 70%; background: var(--danger);"></div>
+          </div>
+          <span id="rain-pct-1" class="num-font"
+            style="font-weight: 700; min-width: 45px; text-align: right;">৭০%</span>
+          <input type="range" id="rain-slider-1" min="0" max="100" value="70" oninput="updateRainProb(1, this.value)"
+            style="max-width: 120px;" />
+        </div>
+
+        <div class="weather-day-bar" id="weather-day-2">
+          <span style="font-weight: 700; min-width: 80px;">পরশু:</span>
+          <div class="weather-progress-track">
+            <div id="rain-bar-2" class="weather-progress-val" style="width: 45%; background: var(--accent-gold);"></div>
+          </div>
+          <span id="rain-pct-2" class="num-font"
+            style="font-weight: 700; min-width: 45px; text-align: right;">৪৫%</span>
+          <input type="range" id="rain-slider-2" min="0" max="100" value="45" oninput="updateRainProb(2, this.value)"
+            style="max-width: 120px;" />
+        </div>
+
+        <div class="weather-day-bar" id="weather-day-3">
+          <span style="font-weight: 700; min-width: 80px;">৩য় দিন:</span>
+          <div class="weather-progress-track">
+            <div id="rain-bar-3" class="weather-progress-val" style="width: 30%; background: var(--brand);"></div>
+          </div>
+          <span id="rain-pct-3" class="num-font"
+            style="font-weight: 700; min-width: 45px; text-align: right;">৩০%</span>
+          <input type="range" id="rain-slider-3" min="0" max="100" value="30" oninput="updateRainProb(3, this.value)"
+            style="max-width: 120px;" />
+        </div>
+
+        <div id="weather-alert-box"
+          style="margin-top: 20px; padding: 16px; border-radius: var(--radius-sm); background: #FEF3C7; border-left: 4px solid var(--accent-gold); font-size: 0.95rem; font-weight: 700;">
+          ⚠️ আগামী ১ দিনের মধ্যে বৃষ্টির সম্ভাবনা ৭০%! ফসল পচনশীল হওয়ায় দ্রুত বিক্রি নিশ্চিত করুন।
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════════════════
+         TAB 6: ADMIN PANEL (অ্যাডমিন নিয়ন্ত্রণ ও সরকারি দর ব্যবস্থাপনা)
+         ══════════════════════════════════════════════════════════════════════ -->
+    <section id="tab-admin" class="tab-pane">
+      <div class="admin-badge-bar">
+        🛡️ সুপার অ্যাডমিন কন্ট্রোল প্যানেল
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="stats-grid">
+        <div class="stat-widget">
+          <div id="admin-stat-users" class="stat-widget-num">৩</div>
+          <div class="stat-widget-label">মোট নিবন্ধিত ইউজার</div>
+        </div>
+        <div class="stat-widget purple">
+          <div id="admin-stat-crops" class="stat-widget-num">২৫</div>
+          <div class="stat-widget-label">সমর্থিত ফসলের জাত</div>
+        </div>
+        <div class="stat-widget blue">
+          <div id="admin-stat-listings" class="stat-widget-num">০</div>
+          <div class="stat-widget-label">মোট ফসলের তালিকা</div>
+        </div>
+        <div class="stat-widget gold">
+          <div id="admin-stat-tx" class="stat-widget-num">০</div>
+          <div class="stat-widget-label">সম্পন্ন এসক্রো লেনদেন</div>
+        </div>
+      </div>
+
+      <!-- Admin Actions Toolbar -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h4 style="font-weight: 800; font-size: 1.1rem; color: var(--primary);">📋 সরকারি DAM মূল্য নিয়ন্ত্রণ</h4>
+        <button class="btn btn-sm btn-primary" onclick="openAddPriceModal()">➕ নতুন ফসল / দর যোগ করুন</button>
+      </div>
+
+      <!-- Admin Crops & Prices Table -->
+      <div class="pro-table-wrapper">
+        <table class="pro-table">
+          <thead>
+            <tr>
+              <th>ফসল</th>
+              <th>ক্যাটাগরি</th>
+              <th>পাইকারি দর (Wholesale)</th>
+              <th>খুচরা দর (Retail)</th>
+              <th>বাজারের ব্যবধান</th>
+              <th>ট্রেন্ড</th>
+              <th>বাজার এলাকা</th>
+              <th>অ্যাকশন</th>
+            </tr>
+          </thead>
+          <tbody id="admin-prices-tbody">
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 20px;">লোড হচ্ছে...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Admin Registered Users List -->
+      <div style="margin-top: 32px;">
+        <h4 style="font-weight: 800; font-size: 1.1rem; color: var(--primary); margin-bottom: 12px;">👥 ইউজার
+          ব্যবস্থাপনা</h4>
+        <div class="pro-table-wrapper">
+          <table class="pro-table">
+            <thead>
+              <tr>
+                <th>নাম</th>
+                <th>ফোন নম্বর</th>
+                <th>ভূমিকা</th>
+                <th>সুনাম স্কোর</th>
+                <th>মোট ডিল</th>
+                <th>এলাকা</th>
+                <th>অ্যাকশন</th>
+              </tr>
+            </thead>
+            <tbody id="admin-users-tbody">
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 20px;">লোড হচ্ছে...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ─── MOBILE BOTTOM NAV ───────────────────────────────────────────────── -->
+  <nav class="mobile-bottom-nav">
+    <button class="bottom-nav-item active" onclick="switchMainTab('home')">
+      <span class="b-nav-icon">🏠</span>
+      <span>বাজার দর</span>
+    </button>
+    <button class="bottom-nav-item" onclick="switchMainTab('grading')">
+      <span class="b-nav-icon">📸</span>
+      <span>AI গ্রেডিং</span>
+    </button>
+    <button class="bottom-nav-item" onclick="switchMainTab('middleman')">
+      <span class="b-nav-icon">💰</span>
+      <span>দালাল ধরা</span>
+    </button>
+    <button class="bottom-nav-item" onclick="switchMainTab('marketplace')">
+      <span class="b-nav-icon">📋</span>
+      <span>সরাসরি বাজার</span>
+    </button>
+    <button class="bottom-nav-item" onclick="switchMainTab('weather')">
+      <span class="b-nav-icon">🌦️</span>
+      <span>আবহাওয়া</span>
+    </button>
+    <button id="admin-bottom-nav-btn" class="bottom-nav-item hidden" onclick="switchMainTab('admin')">
+      <span class="b-nav-icon">🛡️</span>
+      <span>অ্যাডমিন</span>
+    </button>
+  </nav>
+
+  <!-- ─── FLOATING DEMO BUTTON ────────────────────────────────────────────── -->
+  <button class="fab-demo-btn" onclick="executeQuickDemoTour()" title="পুরো সিস্টেম ডেমো দেখুন">
+    🎬 ২ মিনিটে ডেমো
+  </button>
+
+  <!-- ─── ESCROW & QR CODE FULLSCREEN OVERLAY ─────────────────────────────── -->
+  <div id="escrow-modal" class="fullscreen-overlay hidden">
+    <div
+      style="max-width: 640px; margin: 0 auto; background: #fff; padding: 24px; border-radius: var(--radius-lg); border: 1px solid var(--card-border); box-shadow: var(--shadow-lg);">
+      <div
+        style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--bg-subtle); padding-bottom: 12px; margin-bottom: 16px;">
+        <h3 style="font-weight: 800; color: var(--primary);">🔐 নিরাপদ এসক্রো ও QR ট্রেসেবিলিটি ট্রেইল</h3>
+        <button class="btn btn-sm btn-outline" onclick="closeEscrowModal()">✕ বন্ধ করুন</button>
+      </div>
+
+      <div id="escrow-transaction-summary"></div>
+
+      <!-- Stepper Progress Bar -->
+      <div class="escrow-stepper">
+        <div class="stepper-progress-bar">
+          <div id="escrow-progress-fill" class="stepper-progress-fill" style="width: 25%;"></div>
+        </div>
+        <div class="escrow-step active" id="step-node-1">
+          <div class="step-circle">১</div>
+          <div class="step-label">টাকা জমা</div>
+        </div>
+        <div class="escrow-step" id="step-node-2">
+          <div class="step-circle">২</div>
+          <div class="step-label">ফসল পরিবহন</div>
+        </div>
+        <div class="escrow-step" id="step-node-3">
+          <div class="step-circle">৩</div>
+          <div class="step-label">মাল বুঝে পাওয়া</div>
+        </div>
+        <div class="escrow-step" id="step-node-4">
+          <div class="step-circle">৪</div>
+          <div class="step-label">টাকা ছাড়</div>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin: 20px 0;">
+        <button id="btn-advance-escrow" class="btn btn-primary" onclick="advanceCurrentEscrow()">
+          পরবর্তী ধাপ সম্পন্ন করুন →
+        </button>
+      </div>
+
+      <!-- Audit Log of cryptographic hashes -->
+      <div style="background: var(--bg-subtle); border-radius: var(--radius-sm); padding: 12px; margin-top: 16px;">
+        <h5 style="font-weight: 700; margin-bottom: 8px;">🔗 ব্লক ট্রেইল ও ক্রিপ্টোগ্রাফিক হ্যাশ লগ:</h5>
+        <div id="escrow-hash-log" style="font-size: 0.8rem; font-family: monospace; line-height: 1.6;"></div>
+      </div>
+
+      <!-- QR Code Voucher Preview -->
+      <div style="text-align: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--bg-subtle);">
+        <h5 style="font-weight: 700; margin-bottom: 6px;">📱 ডিজিটাল সত্যতা যাচাই QR ভাউচার</h5>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px;">স্ক্যান করলেই কৃষক, মধ্যস্থতাকারী ও
+          ক্রেতার দামের হিস্যা দেখা যাবে</p>
+        <div id="qr-canvas-holder"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── MODAL: NEW LISTING ──────────────────────────────────────────────── -->
+  <div id="modal-new-listing" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">🌾 নতুন ফসলের তালিকা যোগ করুন</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-new-listing')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="handleCreateListingSubmit(event)">
+          <div class="form-group">
+            <label class="form-label">ফসল নির্বাচন করুন</label>
+            <select id="listing-crop-select" class="input-control" onchange="autoFillListingExpectedPrice(this.value)">
+              <!-- Populated via JS -->
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">পরিমাণ (কেজি)</label>
+            <input type="number" id="listing-qty" class="input-control" placeholder="যেমন: ১০০" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">প্রত্যাশিত দাম (৳/কেজি)</label>
+            <input type="number" id="listing-expected-price" class="input-control" placeholder="যেমন: ৩৫" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">কোয়ালিটি গ্রেড</label>
+            <select id="listing-grade-select" class="input-control">
+              <option value="A">গ্রেড A (উচ্চ মান)</option>
+              <option value="B" selected>গ্রেড B (মাঝারি মান)</option>
+              <option value="C">গ্রেড C (সাধারণ মান)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">আড়ত / ডেলিভারি এলাকা</label>
+            <input type="text" id="listing-location" class="input-control" placeholder="যেমন: নরসিংদী সদর আড়ত" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">তালিকা যোগ করুন ✓</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── MODAL: BUYER OFFER ─────────────────────────────────────────────── -->
+  <div id="modal-buyer-offer" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">💰 কৃষকের কাছে অফার পাঠান</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-buyer-offer')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="handleSendBuyerOfferSubmit(event)">
+          <input type="hidden" id="offer-listing-id" />
+          <div id="offer-listing-preview"
+            style="background: var(--bg-subtle); padding: 12px; border-radius: var(--radius-sm); margin-bottom: 16px;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">আপনার অফার দর (৳/কেজি)</label>
+            <input type="number" id="offer-price-input" class="input-control" placeholder="যেমন: ৩৮" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">আপনার নাম / প্রতিষ্ঠানের নাম</label>
+            <input type="text" id="offer-buyer-name" class="input-control"
+              placeholder="যেমন: স্টার হোটেল / কাঁচাবাজার আড়ত" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">মোবাইল নম্বর</label>
+            <input type="text" id="offer-buyer-phone" class="input-control" placeholder="যেমন: 01700000000" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">অফার নিশ্চিত করুন 🚀</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── MODAL: COUNTER OFFER ───────────────────────────────────────────── -->
+  <div id="modal-counter-offer" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">💬 পাল্টা দাম প্রস্তাব করুন</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-counter-offer')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="handleCounterOfferSubmit(event)">
+          <input type="hidden" id="counter-offer-id" />
+          <div class="form-group">
+            <label class="form-label">আপনার সংশোধিত দর (৳/কেজি)</label>
+            <input type="number" id="counter-price-val" class="input-control" placeholder="যেমন: ৩৭" required />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">পাল্টা দাম পাঠান →</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── MODAL: DISPUTE ─────────────────────────────────────────────────── -->
+  <div id="modal-dispute" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">🚩 AI গ্রেডে আপত্তি দায়ের</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-dispute')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="handleDisputeSubmit(event)">
+          <div class="form-group">
+            <label class="form-label">আপত্তির কারণ বিস্তারিত লিখুন</label>
+            <textarea id="dispute-reason-input" class="input-control" rows="3"
+              placeholder="যেমন: ক্যামেরার আলোর কারণে টমেটোর রঙ কিছুটা ফ্যাকাসে দেখাচ্ছিল, বাস্তবে সব টমেটো সম্পূর্ণ পাকা ও ফ্রেশ।"
+              required></textarea>
+          </div>
+          <button type="submit" class="btn btn-danger btn-block">আপত্তি নথিভুক্ত করুন</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── MODAL: ADMIN ADD CROP / PRICE ──────────────────────────────────── -->
+  <div id="modal-admin-add-price" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">➕ নতুন ফসল ও সরকারি বাজার দর সংযোজন</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-admin-add-price')">✕</button>
+      </div>
+      <div class="modal-body">
+        <form onsubmit="handleAdminAddCropSubmit(event)">
+          <div class="form-group">
+            <label class="form-label">ফসলের নাম (বাংলা)</label>
+            <input type="text" id="admin-crop-name-bn" class="input-control" placeholder="যেমন: মিষ্টি আলু" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">ক্যাটাগরি</label>
+            <select id="admin-crop-category" class="input-control">
+              <option value="সবজি">সবজি</option>
+              <option value="মসলা">মসলা</option>
+              <option value="শাকসবজি">শাকসবজি</option>
+              <option value="শস্য">শস্য</option>
+              <option value="ফল">ফল</option>
+            </select>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+              <label class="form-label">পাইকারি দর (৳)</label>
+              <input type="number" id="admin-crop-wholesale" class="input-control" placeholder="যেমন: ৩৫" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">খুচরা দর (৳)</label>
+              <input type="number" id="admin-crop-retail" class="input-control" placeholder="যেমন: ৫৫" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">আইকন ইমোজি</label>
+            <input type="text" id="admin-crop-icon" class="input-control" placeholder="যেমন: 🍠" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">সংরক্ষণ করুন ✓</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── MODAL: SETTINGS ────────────────────────────────────────────────── -->
+  <div id="modal-settings" class="modal-overlay hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">⚙️ সিস্টেম সেটিংস</h3>
+        <button class="modal-close-btn" onclick="closeModal('modal-settings')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">✨ Google Gemini API Key (ফ্রি ও দ্রুততম AI ভিশন)</label>
+          <input type="password" id="settings-gemini-key" class="input-control" placeholder="AIzaSy..." />
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">Google AI Studio
+            (aistudio.google.com) থেকে সম্পূর্ণ ফ্রিতে পাওয়া যায়।</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">🔑 Anthropic Claude API Key (বিকল্প AI ভিশন মডেল)</label>
+          <input type="password" id="settings-api-key" class="input-control" placeholder="sk-ant-api..." />
+          <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">আপনার API কী ব্রাউজারের নিজস্ব
+            মেমরিতে নিরাপদে থাকবে। কোনো কী না দিলেও অফলাইন লোকাল ভিশন কাজ করবে।</p>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="saveSettings()">সেটিংস সংরক্ষণ করুন</button>
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--card-border);" />
+        <button class="btn btn-outline btn-block" style="color: var(--danger); border-color: var(--danger);"
+          onclick="resetAllDemoData()">
+          🗑️ সব পরীক্ষামূলক ডেটা রিসেট করুন
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Application Logic Script -->
+  <script src="/app.js"></script>
+</body>
+
+</html>
