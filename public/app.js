@@ -1,9 +1,3 @@
-/**
- * Bhorsha (ভরসা) v2.0 Pro - Frontend Application Logic
- * Pure Vanilla JavaScript (Modular, Clean, High-Performance)
- * Features: JWT Auth, Admin Dashboard, 25+ Crop Pricing & Auto-Match,
- *           Claude Vision AI Grading, Middleman Detector, Escrow & QR
- */
 
 // ─── GLOBAL APPLICATION STATE ───────────────────────────────────────────────
 const AppState = {
@@ -78,7 +72,7 @@ function renderUserNavState(user) {
     userPill.classList.remove('hidden');
     loginBtn.classList.add('hidden');
     document.getElementById('nav-user-name').textContent = user.name.split(' ')[0];
-    document.getElementById('nav-user-avatar').textContent = user.avatar || '👨‍🌾';
+    document.getElementById('nav-user-avatar').textContent = user.avatar || '👨🌾';
     
     const roleBadge = document.getElementById('nav-role-badge');
     if (user.role === 'admin') {
@@ -572,7 +566,7 @@ function analyzeCropImageLocally(imgElement, requestedCrop) {
 
     // 1. Red/Orange Fruit Body (Tomato, Carrot, Red Pepper)
     // Red must be noticeably higher than Green and Blue
-    if (r > 95 && r > g * 1.20 && r > b * 1.25) {
+    if (r > 95 && r > g * 1.20 && r > b * 1.20) {
       redFruitPixels.push({ r, g, b, lum });
     }
     // 2. Purple/Violet Fruit Body (Eggplant / বেগুন)
@@ -640,46 +634,57 @@ function analyzeCropImageLocally(imgElement, requestedCrop) {
     cropPixelsToAnalyze = redFruitPixels.length > 0 ? redFruitPixels : greenVeggiePixels;
   }
 
-  let totalCropCount = cropPixelsToAnalyze.length;
-  if (totalCropCount < 100) {
-    totalCropCount = totalNonWhitePixels; // fallback
-  }
+  let totalCropCount = Math.max(cropPixelsToAnalyze.length, 1);
 
-  // Count true rot / necrosis / fungal mold ON THE CROP BODY:
+  // Count true rot / necrosis / fungal mold on the crop:
+  // Muddy/necrotic lesions are desaturated dark patches (NOT rich red/purple/green crop skin)
   let blemishCount = 0;
   let severeRotCount = 0;
+  let glossyHighlights = 0;
 
   cropPixelsToAnalyze.forEach(p => {
-    // True black rot on a colored fruit:
-    if (p.lum < 40) {
-      severeRotCount++;
-    } else if (p.lum < 65 && Math.abs(p.r - p.g) < 18) {
-      // Gray moldy / muddy lesion
+    if (p.lum > 180) glossyHighlights++;
+  });
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = data[i + 3];
+    if (a < 120) continue;
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+    // True dull muddy necrotic blemish
+    if (lum > 15 && lum < 50 && Math.abs(r - g) < 14 && Math.abs(r - b) < 14) {
       blemishCount++;
     }
-  });
+    // Severe sunken black rot
+    if (lum <= 15 && Math.abs(r - g) < 8) {
+      severeRotCount++;
+    }
+  }
 
   const blemishRatio = (severeRotCount * 1.5 + blemishCount) / totalCropCount;
 
   let grade = 'A';
-  let defectPct = Math.round(blemishRatio * 100);
-  let confidence = 0.94;
+  let defectPct = Math.min(100, Math.round(blemishRatio * 100));
+  let confidence = 0.95;
   let reasons = [];
 
   // Realistic Grading:
-  if (blemishRatio > 0.18 || (severeRotCount / totalCropCount) > 0.12) {
+  if (blemishRatio >= 0.18) {
     grade = 'C';
-    confidence = 0.88;
+    confidence = 0.89;
     defectPct = Math.max(defectPct, 22);
     reasons = [
       `⚠️ ফসলের গায়ে স্পষ্ট কালো দাগ, ক্ষত বা পচনের বিস্তার লক্ষ্য করা গেছে (ক্ষতির হার প্রায় ${toBanglaNum(defectPct)}%)।`,
       'পচন বা ছত্রাকের কারণে ফসল দ্রুত নরম ও নষ্ট হওয়ার উচ্চ ঝুঁকিতে রয়েছে।',
       'মান নিম্ন হওয়ায় সাধারণ পাইকারি দরের চেয়ে ১৫% কম বা বাছাই মূল্যে বিক্রির হিসাব প্রযোজ্য।'
     ];
-  } else if (blemishRatio > 0.05 || (severeRotCount + blemishCount) > 150) {
+  } else if (blemishRatio >= 0.05) {
     grade = 'B';
-    confidence = 0.91;
-    defectPct = Math.max(defectPct, 8);
+    confidence = 0.92;
+    defectPct = Math.max(defectPct, 7);
     reasons = [
       `কিছু অংশে সামান্য দাগ, খসখসে ভাব বা রঙের কিছুটা অসমতা রয়েছে (ত্রুটি প্রায় ${toBanglaNum(defectPct)}%)।`,
       'মারাত্মক কোনো পচন নেই; সরাসরি রান্না ও নিয়মিত বাজারে বিক্রির সম্পূর্ণ উপযোগী।',
@@ -689,7 +694,7 @@ function analyzeCropImageLocally(imgElement, requestedCrop) {
     // FRESH, BRIGHT, GLOSSY CROP -> GRADE A!
     grade = 'A';
     confidence = 0.96;
-    defectPct = Math.min(defectPct, 2);
+    defectPct = Math.max(0, Math.min(defectPct, 3));
     reasons = [
       `সম্পূর্ণ সতেজ, দাগহীন ও চমৎকার প্রাকৃতিক রঙের সেরা ${detectedCrop.name_bn}।`,
       `ক্ষতি বা দাগের মাত্রা নগণ্য (মাত্র ${toBanglaNum(defectPct)}%), কোনো পচন বা ক্ষতচিহ্ন নেই।`,
@@ -1674,19 +1679,40 @@ function openSettingsModal() {
 }
 
 function loadSavedSettings() {
-  const key = localStorage.getItem('bhorsha_claude_api_key');
-  if (key) {
+  const geminiKey = localStorage.getItem('bhorsha_gemini_api_key');
+  if (geminiKey) {
+    const input = document.getElementById('settings-gemini-key');
+    if (input) input.value = geminiKey;
+  }
+  const claudeKey = localStorage.getItem('bhorsha_claude_api_key');
+  if (claudeKey) {
     const input = document.getElementById('settings-api-key');
-    if (input) input.value = key;
+    if (input) input.value = claudeKey;
   }
 }
 
 function saveSettings() {
-  const key = document.getElementById('settings-api-key').value.trim();
-  if (key) {
-    localStorage.setItem('bhorsha_claude_api_key', key);
-    showToast('API Key সফলভাবে সংরক্ষিত হয়েছে ✅', 'success');
+  const geminiInput = document.getElementById('settings-gemini-key');
+  if (geminiInput) {
+    const gKey = geminiInput.value.trim();
+    if (gKey) {
+      localStorage.setItem('bhorsha_gemini_api_key', gKey);
+    } else {
+      localStorage.removeItem('bhorsha_gemini_api_key');
+    }
   }
+
+  const claudeInput = document.getElementById('settings-api-key');
+  if (claudeInput) {
+    const cKey = claudeInput.value.trim();
+    if (cKey) {
+      localStorage.setItem('bhorsha_claude_api_key', cKey);
+    } else {
+      localStorage.removeItem('bhorsha_claude_api_key');
+    }
+  }
+
+  showToast('সেটিংস সফলভাবে সংরক্ষিত হয়েছে ✅', 'success');
   closeModal('modal-settings');
 }
 
