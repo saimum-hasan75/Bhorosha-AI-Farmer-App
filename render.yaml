@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: bhorsha-ai-farmer-app
+    runtime: node
+    plan: free # Note: Render Free tier has ephemeral disk (auto-reseeds SQLite on container spin-down/restart)
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATA_DIR
+        value: /var/data
+    # ──────────────────────────────────────────────────────────────────────────
+    # RENDER PERSISTENT DISK CONFIGURATION (Requires Starter Plan or higher):
+    # Free tier instances do not support Render Persistent Disks.
+    # To enable persistent SQLite storage across spins and deploys:
+    # 1. Change `plan: free` above to `plan: starter`
+    # 2. Uncomment the `disk:` block below:
+    # disk:
+    #   name: bhorsha-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    # ──────────────────────────────────────────────────────────────────────────

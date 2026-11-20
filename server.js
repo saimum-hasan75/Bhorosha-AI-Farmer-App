@@ -13,9 +13,38 @@ const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { initDB, queryAll, queryOne, runSQL, resetDB } = require('./database');
 
+const crypto = require('crypto');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'bhorsha_secure_token_secret_2026';
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Strict Production JWT_SECRET Enforcement:
+// In production, startup MUST FAIL immediately if JWT_SECRET is missing.
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  if (IS_PROD) {
+    console.error('\n' + '='.repeat(64));
+    console.error('❌ [FATAL DEPLOYMENT ERROR] JWT_SECRET is missing in production!');
+    console.error('Production startup aborted. You must configure JWT_SECRET in your environment or Render dashboard.');
+    console.error('='.repeat(64) + '\n');
+    process.exit(1);
+  } else {
+    JWT_SECRET = 'bhorsha_dev_jwt_secret_key_2026';
+    console.warn('⚠️ WARNING: Using development fallback JWT_SECRET. Set JWT_SECRET in production.');
+  }
+}
+
+// ─── Security & Reverse Proxy (Render / Cloud Deployment) ───────────────────
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
 
 // ─── Middleware ─────────────────────────────────────────────────────────────
 app.use(cors());
@@ -450,7 +479,7 @@ app.get('/api/listings', (req, res) => {
   }
 });
 
-app.post('/api/listings', optionalAuth, (req, res) => {
+app.post('/api/listings', authMiddleware, (req, res) => {
   try {
     const { crop_id, crop_name, quantity, expected_price, location, grade } = req.body;
     if (!crop_name || !quantity || !expected_price) {
@@ -458,13 +487,13 @@ app.post('/api/listings', optionalAuth, (req, res) => {
     }
 
     const id = 'lst_' + uuidv4().substr(0, 10);
-    const farmerName = req.user ? req.user.name : (req.body.farmer_name || 'স্থানীয় কৃষক');
-    const userId = req.user ? req.user.id : 'guest_farmer';
+    const farmerName = req.user.name;
+    const userId = req.user.id;
 
     runSQL(
       `INSERT INTO listings (id, user_id, farmer_name, crop_id, crop_name, quantity, expected_price, location, grade, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', datetime('now'))`,
-      [id, userId, farmerName, crop_id || 1, crop_name, parseFloat(quantity), parseFloat(expected_price), location || 'নিকটস্থ আড়ত', grade || 'A']
+      [id, userId, farmerName, crop_id || 1, crop_name, parseFloat(quantity), parseFloat(expected_price), location || req.user.location || 'নিকটস্থ আড়ত', grade || 'A']
     );
 
     const saved = queryOne('SELECT * FROM listings WHERE id = ?', [id]);
@@ -475,15 +504,20 @@ app.post('/api/listings', optionalAuth, (req, res) => {
 });
 
 // ─── Marketplace: Buyer Offers ──────────────────────────────────────────────
-app.post('/api/offers', optionalAuth, (req, res) => {
+app.post('/api/offers', authMiddleware, (req, res) => {
   try {
-    const { listing_id, offer_price, buyer_name, buyer_phone } = req.body;
+    const { listing_id, offer_price, buyer_phone } = req.body;
     if (!listing_id || !offer_price) {
       return res.status(400).json({ success: false, error: 'তালিকা আইডি ও অফারের মূল্য আবশ্যক' });
     }
 
     const listing = queryOne('SELECT * FROM listings WHERE id = ?', [listing_id]);
     if (!listing) return res.status(404).json({ success: false, error: 'তালিকা পাওয়া যায়নি' });
+
+    // Ownership Check: Farmer cannot bid on their own listing
+    if (listing.user_id === req.user.id) {
+      return res.status(400).json({ success: false, error: 'আপনি নিজের তালিকায় অফার দিতে পারবেন না' });
+    }
 
     // Lookup crop wholesale price from DAM
     const cropPrice = queryOne(`
@@ -502,13 +536,13 @@ app.post('/api/offers', optionalAuth, (req, res) => {
     const is_fair = offer >= fairPrice;
 
     const id = 'ofr_' + uuidv4().substr(0, 10);
-    const buyerId = req.user ? req.user.id : 'guest_buyer';
-    const bName = req.user ? req.user.name : (buyer_name || 'পাইকারি ক্রেতা');
+    const buyerId = req.user.id;
+    const bName = req.user.name;
 
     runSQL(
       `INSERT INTO offers (id, listing_id, buyer_id, buyer_name, buyer_phone, offer_price, fair_price, gap_percent, is_fair, status, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'))`,
-      [id, listing_id, buyerId, bName, buyer_phone || '', offer, fairPrice, gap_percent, is_fair ? 1 : 0]
+      [id, listing_id, buyerId, bName, buyer_phone || req.user.phone || '', offer, fairPrice, gap_percent, is_fair ? 1 : 0]
     );
 
     // Notify farmer
@@ -527,12 +561,34 @@ app.post('/api/offers', optionalAuth, (req, res) => {
   }
 });
 
-// Update Offer (Accept, Decline, Counter)
-app.patch('/api/offers/:id', optionalAuth, (req, res) => {
+// Update Offer (Accept, Decline, Counter) with Strict Ownership & Role Check
+app.patch('/api/offers/:id', authMiddleware, (req, res) => {
   try {
     const { status, counter_price } = req.body;
     const offer = queryOne('SELECT * FROM offers WHERE id = ?', [req.params.id]);
     if (!offer) return res.status(404).json({ success: false, error: 'অফার পাওয়া যায়নি' });
+
+    const listing = queryOne('SELECT * FROM listings WHERE id = ?', [offer.listing_id]);
+    if (!listing) return res.status(404).json({ success: false, error: 'সংশ্লিষ্ট তালিকা পাওয়া যায়নি' });
+
+    const isFarmer = (listing.user_id === req.user.id);
+    const isBuyer = (offer.buyer_id === req.user.id);
+    const isAdmin = (req.user.role === 'admin');
+
+    // Role & Ownership Authorization Guards:
+    if (status === 'accepted' || status === 'declined') {
+      if (!isFarmer && !isAdmin) {
+        return res.status(403).json({ success: false, error: 'শুধুমাত্র সংশ্লিষ্ট কৃষক বা অ্যাডমিন এই অফার গ্রহণ বা প্রত্যাখ্যান করতে পারেন' });
+      }
+    } else if (status === 'countered') {
+      if (!isFarmer && !isBuyer && !isAdmin) {
+        return res.status(403).json({ success: false, error: 'শুধুমাত্র সংশ্লিষ্ট কৃষক বা ক্রেতা পাল্টা দর প্রস্তাব করতে পারেন' });
+      }
+    } else {
+      if (!isFarmer && !isBuyer && !isAdmin) {
+        return res.status(403).json({ success: false, error: 'অননুমোদিত অ্যাকশন' });
+      }
+    }
 
     if (counter_price) {
       runSQL('UPDATE offers SET status = ?, counter_price = ? WHERE id = ?', [status || 'countered', parseFloat(counter_price), req.params.id]);
@@ -543,29 +599,26 @@ app.patch('/api/offers/:id', optionalAuth, (req, res) => {
     // If accepted -> automatically initialize Escrow Transaction
     if (status === 'accepted') {
       runSQL('UPDATE listings SET status = ? WHERE id = ?', ['accepted', offer.listing_id]);
-      const listing = queryOne('SELECT * FROM listings WHERE id = ?', [offer.listing_id]);
-      if (listing) {
-        const txId = 'tx_' + uuidv4().substr(0, 10);
-        const finalPrice = offer.counter_price || offer.offer_price;
-        const intermediaryPrice = parseFloat((finalPrice * 1.30).toFixed(2));
-        const consumerPrice = parseFloat((intermediaryPrice * 1.25).toFixed(2));
-        const farmerShare = parseFloat(((finalPrice / consumerPrice) * 100).toFixed(2));
-        const txHash = 'TX-BN-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      const txId = 'tx_' + uuidv4().substr(0, 10);
+      const finalPrice = offer.counter_price || offer.offer_price;
+      const intermediaryPrice = parseFloat((finalPrice * 1.30).toFixed(2));
+      const consumerPrice = parseFloat((intermediaryPrice * 1.25).toFixed(2));
+      const farmerShare = parseFloat(((finalPrice / consumerPrice) * 100).toFixed(2));
+      const txHash = 'TX-BN-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
-        runSQL(
-          `INSERT INTO transactions (id, listing_id, offer_id, farmer_id, farmer_name, buyer_id, buyer_name,
-            crop_name, quantity, farmer_price, intermediary_price, consumer_price, farmer_share_percent,
-            fair_price, escrow_step, escrow_log, tx_hash, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, datetime('now'), datetime('now'))`,
-          [
-            txId, listing.id, offer.id, listing.user_id, listing.farmer_name, offer.buyer_id, offer.buyer_name,
-            listing.crop_name, listing.quantity, finalPrice, intermediaryPrice, consumerPrice, farmerShare,
-            offer.fair_price || finalPrice,
-            JSON.stringify([{ step: 1, label: 'টাকা এসক্রোতে জমা', hash: txHash, timestamp: new Date().toLocaleString('bn-BD') }]),
-            txHash
-          ]
-        );
-      }
+      runSQL(
+        `INSERT INTO transactions (id, listing_id, offer_id, farmer_id, farmer_name, buyer_id, buyer_name,
+          crop_name, quantity, farmer_price, intermediary_price, consumer_price, farmer_share_percent,
+          fair_price, escrow_step, escrow_log, tx_hash, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, datetime('now'), datetime('now'))`,
+        [
+          txId, listing.id, offer.id, listing.user_id, listing.farmer_name, offer.buyer_id, offer.buyer_name,
+          listing.crop_name, listing.quantity, finalPrice, intermediaryPrice, consumerPrice, farmerShare,
+          offer.fair_price || finalPrice,
+          JSON.stringify([{ step: 1, label: 'টাকা এসক্রোতে জমা', hash: txHash, timestamp: new Date().toLocaleString('bn-BD') }]),
+          txHash
+        ]
+      );
     }
 
     res.json({ success: true, message: `অফার স্ট্যাটাস: ${status} সফল হয়েছে` });
@@ -591,12 +644,30 @@ app.get('/api/transactions/:id', (req, res) => {
   res.json({ success: true, data: tx });
 });
 
-// Advance Escrow Step
-app.patch('/api/transactions/:id/escrow', (req, res) => {
+// Advance Escrow Step - Strictly Authenticated with Role & Ownership Check
+app.patch('/api/transactions/:id/escrow', authMiddleware, (req, res) => {
   try {
     const { step } = req.body;
     const tx = queryOne('SELECT * FROM transactions WHERE id = ?', [req.params.id]);
     if (!tx) return res.status(404).json({ success: false, error: 'লেনদেন পাওয়া যায়নি' });
+
+    const isFarmer = (tx.farmer_id === req.user.id);
+    const isBuyer = (tx.buyer_id === req.user.id);
+    const isAdmin = (req.user.role === 'admin');
+
+    if (!isFarmer && !isBuyer && !isAdmin) {
+      return res.status(403).json({ success: false, error: 'শুধুমাত্র এই চুক্তির কৃষক, ক্রেতা বা অ্যাডমিন এসক্রো পরিবর্তন করতে পারেন' });
+    }
+
+    // Role-based step validation:
+    // Step 2: Dispatch / transport -> Farmer or Admin only
+    if (step === 2 && !isFarmer && !isAdmin) {
+      return res.status(403).json({ success: false, error: 'শুধুমাত্র কৃষক ফসল পরিবহন শুরু করতে পারেন' });
+    }
+    // Step 3 or 4: Goods received / release funds -> Buyer or Admin only
+    if ((step === 3 || step === 4) && !isBuyer && !isAdmin) {
+      return res.status(403).json({ success: false, error: 'শুধুমাত্র ক্রেতা বা অ্যাডমিন ফসল প্রাপ্তি ও টাকা ছাড় করতে পারেন' });
+    }
 
     let log = [];
     try { log = JSON.parse(tx.escrow_log || '[]'); } catch (e) { log = []; }
@@ -697,8 +768,11 @@ app.get('/api/admin/users', authMiddleware, adminOnly, (req, res) => {
 });
 
 app.delete('/api/admin/users/:id', authMiddleware, adminOnly, (req, res) => {
-  if (req.params.id === 'usr_admin') {
-    return res.status(400).json({ success: false, error: 'সুপার অ্যাডমিন ডিলিট করা সম্ভব নয়' });
+  if (['usr_admin', 'usr_farmer', 'usr_buyer'].includes(req.params.id)) {
+    return res.status(400).json({ success: false, error: 'সিস্টেম ডিফল্ট অ্যাকাউন্ট মুছে ফেলা সম্ভব নয়' });
+  }
+  if (req.params.id === req.user.id) {
+    return res.status(400).json({ success: false, error: 'নিজের অ্যাকাউন্ট মুছে ফেলা সম্ভব নয়' });
   }
   runSQL('DELETE FROM users WHERE id = ?', [req.params.id]);
   res.json({ success: true, message: 'ইউজার মুছে ফেলা হয়েছে' });
@@ -797,8 +871,16 @@ app.get('/api/kpi', (req, res) => {
   }
 });
 
-// Demo Data Seed
-app.post('/api/demo-seed', (req, res) => {
+// Demo Data Seed - Guarded in Production
+app.post('/api/demo-seed', optionalAuth, (req, res) => {
+  // In production, block public unauthenticated invocation
+  if (process.env.NODE_ENV === 'production' && (!req.user || req.user.role !== 'admin')) {
+    return res.status(403).json({
+      success: false,
+      error: 'নিরাপত্তার স্বার্থে প্রোডাকশনে শুধুমাত্র অ্যাডমিন ডেমো ডেটা সিড করতে পারবেন'
+    });
+  }
+
   try {
     // Delete existing demo records if present to avoid unique constraint collision
     runSQL("DELETE FROM listings WHERE id = 'lst_demo_01'");
@@ -838,8 +920,14 @@ app.post('/api/demo-seed', (req, res) => {
   }
 });
 
-// Reset
-app.post('/api/reset', (req, res) => {
+// Reset - Strictly Admin Only (Cannot be accessed publicly in production or development)
+app.post('/api/reset', authMiddleware, adminOnly, (req, res) => {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_RESET !== 'true') {
+    return res.status(403).json({
+      success: false,
+      error: 'প্রোডাকশন ডেটাবেস রিসেট নিষ্ক্রিয় করা আছে (নিরাপত্তা সুরক্ষা)'
+    });
+  }
   resetDB();
   res.json({ success: true, message: 'সব ডেটা সফলভাবে রিসেট হয়েছে' });
 });
@@ -852,16 +940,32 @@ app.get('*', (req, res) => {
 // ─── Server Startup ─────────────────────────────────────────────────────────
 async function startServer() {
   await initDB();
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`\n======================================================`);
     console.log(`🌾 ভরসা (Bhorsha) v2.0 Pro সার্ভার সফলভাবে চালু হয়েছে`);
-    console.log(`🔗 লোকাল লিঙ্ক : http://localhost:${PORT}`);
+    console.log(`🔗 হোস্ট লিঙ্ক  : http://0.0.0.0:${PORT} (PORT: ${PORT})`);
     console.log(`📊 ডেটাবেস     : SQLite (sql.js) - bhorsha.db`);
-    console.log(`🛡️  অ্যাডমিন লগইন: 01700000000 (পাসওয়ার্ড: admin123)`);
-    console.log(`👨‍🌾 কৃষক লগইন   : 01800000000 (পাসওয়ার্ড: farmer123)`);
-    console.log(`🏪 ক্রেতা লগইন   : 01900000000 (পাসওয়ার্ড: buyer123)`);
+    if (IS_PROD) {
+      console.log(`🛡️  নিরাপত্তা     : প্রোডাকশন মোড সক্রিয় (ক্রেডেনশিয়াল লগিং নিষ্ক্রিয়)`);
+    } else {
+      console.log(`🛡️  অ্যাডমিন লগইন: 01700000000 (পাসওয়ার্ড: admin123)`);
+      console.log(`👨‍🌾 কৃষক লগইন   : 01800000000 (পাসওয়ার্ড: farmer123)`);
+      console.log(`🏪 ক্রেতা লগইন   : 01900000000 (পাসওয়ার্ড: buyer123)`);
+    }
     console.log(`======================================================\n`);
   });
+
+  // Graceful shutdown
+  const shutdown = () => {
+    console.log('\n🛑 সার্ভার শাটডাউন করা হচ্ছে...');
+    server.close(() => {
+      console.log('✅ সার্ভার সংযোগ বন্ধ সম্পন্ন।');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startServer().catch(err => {

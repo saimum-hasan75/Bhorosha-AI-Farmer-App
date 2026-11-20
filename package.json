@@ -7,7 +7,16 @@
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["agriculture", "ai", "bangladesh", "farmers", "bangla"],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "agriculture",
+    "ai",
+    "bangladesh",
+    "farmers",
+    "bangla"
+  ],
   "author": "Team Mathbondhu",
   "license": "MIT",
   "dependencies": {

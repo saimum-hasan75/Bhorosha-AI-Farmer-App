@@ -11,7 +11,21 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
-const DB_PATH = path.join(__dirname, 'bhorsha.db');
+// Support Render Persistent Disk (e.g. /var/data, DATA_DIR, or local fallback)
+let DB_DIR = process.env.DATA_DIR || __dirname;
+let DB_PATH = process.env.DB_PATH || path.join(DB_DIR, 'bhorsha.db');
+
+// Ensure directory is writable, otherwise fallback to local __dirname
+try {
+  const testDir = path.dirname(DB_PATH);
+  if (!fs.existsSync(testDir)) {
+    fs.mkdirSync(testDir, { recursive: true });
+  }
+} catch (e) {
+  console.warn(`⚠️ Warning: Cannot create ${DB_DIR}, falling back to local directory:`, e.message);
+  DB_DIR = __dirname;
+  DB_PATH = path.join(DB_DIR, 'bhorsha.db');
+}
 let db = null;
 
 // Initial 25+ real-world crops with current DAM market benchmarks (BDT)
@@ -46,6 +60,12 @@ const SEED_CROPS = [
 async function initDB() {
   const SQL = await initSqlJs();
 
+  // Ensure directory exists
+  const dir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
   if (fs.existsSync(DB_PATH)) {
     try {
       const fileBuffer = fs.readFileSync(DB_PATH);
@@ -56,8 +76,21 @@ async function initDB() {
       db = new SQL.Database();
     }
   } else {
-    db = new SQL.Database();
-    console.log(`✅ নতুন ডেটাবেস তৈরি হয়েছে: ${DB_PATH}`);
+    // If a template DB exists in __dirname and we are using an external DATA_DIR, copy it
+    const templatePath = path.join(__dirname, 'bhorsha.db');
+    if (DB_PATH !== templatePath && fs.existsSync(templatePath)) {
+      try {
+        fs.copyFileSync(templatePath, DB_PATH);
+        const fileBuffer = fs.readFileSync(DB_PATH);
+        db = new SQL.Database(fileBuffer);
+        console.log(`✅ টেমপ্লেট থেকে ডেটাবেস কপি করে লোড করা হয়েছে: ${DB_PATH}`);
+      } catch (err) {
+        db = new SQL.Database();
+      }
+    } else {
+      db = new SQL.Database();
+      console.log(`✅ নতুন ডেটাবেস তৈরি হয়েছে: ${DB_PATH}`);
+    }
   }
 
   // Create tables
@@ -299,11 +332,25 @@ function saveDB() {
     if (!db) return;
     const data = db.export();
     const buffer = Buffer.from(data);
+    const dir = path.dirname(DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     fs.writeFileSync(DB_PATH, buffer);
   } catch (err) {
     console.error('ডেটাবেস সংরক্ষণে সমস্যা:', err.message);
   }
 }
+
+// Graceful save on shutdown
+process.on('SIGINT', () => {
+  saveDB();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  saveDB();
+  process.exit(0);
+});
 
 function resetDB() {
   db.run('DELETE FROM crop_grades');

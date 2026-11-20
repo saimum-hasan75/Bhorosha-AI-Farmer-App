@@ -1152,6 +1152,11 @@ function renderMarketplaceListings(listings) {
 }
 
 function openNewListingModal() {
+  if (!AppState.token) {
+    showAuthView();
+    showToast('লিস্টিং তৈরি করতে অনুগ্রহ করে প্রথমে লগইন করুন', 'info');
+    return;
+  }
   document.getElementById('modal-new-listing').classList.remove('hidden');
 }
 
@@ -1198,6 +1203,11 @@ async function handleCreateListingSubmit(event) {
 }
 
 function openBuyerOfferModal(listingId, cropName, qty, expectedPrice) {
+  if (!AppState.token) {
+    showAuthView();
+    showToast('অফার দিতে অনুগ্রহ করে প্রথমে লগইন করুন', 'info');
+    return;
+  }
   document.getElementById('offer-listing-id').value = listingId;
   document.getElementById('offer-price-input').value = expectedPrice;
   document.getElementById('offer-listing-preview').innerHTML = `
@@ -1608,8 +1618,8 @@ async function toggleNotificationsModal() {
 async function executeQuickDemoTour() {
   showLoading('২ মিনিটের ফুল ডেমো ডেটা তৈরি ও লোড হচ্ছে...');
   try {
-    // 1. Seed demo database
-    await fetch('/api/demo-seed', { method: 'POST' });
+    // 1. Seed demo database (uses auth credentials if logged in)
+    await authFetch('/api/demo-seed', { method: 'POST' });
 
     // 2. Refresh crops & listings
     await loadCropsAndPrices();
@@ -1717,14 +1727,19 @@ function saveSettings() {
 }
 
 async function resetAllDemoData() {
-  if (!confirm('আপনি কি সব পরীক্ষামূলক ডেটা রিসেট করতে চান?')) return;
+  if (!confirm('আপনি কি সব পরীক্ষামূলক ডেটা রিসেট করতে চান? (শুধুমাত্র অ্যাডমিন অনুমোদিত)')) return;
   showLoading('ডেটা রিসেট হচ্ছে...');
   try {
-    await fetch('/api/reset', { method: 'POST' });
+    const res = await authFetch('/api/reset', { method: 'POST' });
+    const data = await res.json();
     hideLoading();
-    closeModal('modal-settings');
-    showToast('সব ডেটা রিসেট সম্পন্ন হয়েছে', 'info');
-    location.reload();
+    if (data.success) {
+      closeModal('modal-settings');
+      showToast('সব ডেটা রিসেট সম্পন্ন হয়েছে', 'info');
+      location.reload();
+    } else {
+      showToast(data.error || 'রিসেট ব্যর্থ (শুধুমাত্র অ্যাডমিন অনুমোদিত)', 'error');
+    }
   } catch (e) {
     hideLoading();
     showToast('রিসেট ব্যর্থ', 'error');
